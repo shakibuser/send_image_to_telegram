@@ -30,8 +30,13 @@ def load_token(key_name, json_key):
 TELEGRAM_BOT_TOKEN = load_token("TELEGRAM_BOT_TOKEN", "telegram_bot_token")
 TELEGRAM_CHANNEL_ID = load_token("TELEGRAM_CHANNEL_ID", "telegram_channel_id")
 
-# --- 2. TEXT SETTINGS ---
-TEXT_PERSIAN = "صبا رسانه"
+# --- 2. TEXT SETTINGS (Environment Aware) ---
+# تشخیص محیط اجرا: اگر در گیت‌هاب باشد True می‌شود
+IS_GITHUB = os.environ.get("GITHUB_ACTIONS") == "true"
+
+# اگر در گیت‌هاب بودیم، متن فارسی را خالی می‌گذاریم تا فقط انگلیسی نمایش داده شود
+# اگر در ویندوز بودیم، متن فارسی سر جای خود باقی می‌ماند
+TEXT_PERSIAN = "" if IS_GITHUB else "صبا رسانه"
 TEXT_ENGLISH = "@saba_rasanehh"
 
 # --- 3. DYNAMIC PROMPTS ---
@@ -184,21 +189,28 @@ def add_watermark(image):
     font = get_font(font_size)
 
     # Prepare Text
-    reshaped_fa = arabic_reshaper.reshape(TEXT_PERSIAN)
-    bidi_fa = get_display(reshaped_fa)  # Text 1 (Top)
+    # Handle Persian text only if available (not running on GitHub)
+    bidi_fa = ""
+    if TEXT_PERSIAN:
+        reshaped_fa = arabic_reshaper.reshape(TEXT_PERSIAN)
+        bidi_fa = get_display(reshaped_fa)  # Text 1 (Top)
+
     text_en = TEXT_ENGLISH             # Text 2 (Bottom)
 
     # Calculate Dimensions for BOTH lines
-    bbox_fa = draw.textbbox((0, 0), bidi_fa, font=font)
-    w_fa = bbox_fa[2] - bbox_fa[0]
-    h_fa = bbox_fa[3] - bbox_fa[1]
+    w_fa, h_fa = 0, 0
+    if bidi_fa:
+        bbox_fa = draw.textbbox((0, 0), bidi_fa, font=font)
+        w_fa = bbox_fa[2] - bbox_fa[0]
+        h_fa = bbox_fa[3] - bbox_fa[1]
 
     bbox_en = draw.textbbox((0, 0), text_en, font=font)
     w_en = bbox_en[2] - bbox_en[0]
     h_en = bbox_en[3] - bbox_en[1]
 
     # Layout Config
-    line_spacing = int(font_size * 0.4)  # Explicit gap between lines
+    # Explicit gap between lines
+    line_spacing = int(font_size * 0.4) if bidi_fa else 0
     total_text_w = max(w_fa, w_en)
     total_text_h = h_fa + h_en + line_spacing
 
@@ -240,19 +252,21 @@ def add_watermark(image):
     # Draw Text Lines (Right side of icon)
     text_block_x = start_x + icon_size + gap
 
-    # Vertical position for first line (Top)
-    # Start from center, move up by half total text height
+    # Vertical position
     text_start_y = center_y - (total_text_h // 2)
 
-    # Draw Persian (Top Line)
-    # Note: textbbox top might have padding, usually we draw at y
-    draw.text((text_block_x, text_start_y), bidi_fa,
-              font=font, fill=(255, 255, 255, 255))
-
-    # Draw English (Bottom Line)
-    # Y = start + height of first line + spacing
-    draw.text((text_block_x, text_start_y + h_fa + line_spacing),
-              text_en, font=font, fill=(255, 255, 255, 255))
+    if bidi_fa:
+        # Draw Persian (Top Line)
+        draw.text((text_block_x, text_start_y), bidi_fa,
+                  font=font, fill=(255, 255, 255, 255))
+        # Draw English (Bottom Line)
+        draw.text((text_block_x, text_start_y + h_fa + line_spacing),
+                  text_en, font=font, fill=(255, 255, 255, 255))
+    else:
+        # Draw English Only (Centered Vertically)
+        y_centered = center_y - (h_en // 2) - 4
+        draw.text((text_block_x, y_centered), text_en,
+                  font=font, fill=(255, 255, 255, 255))
 
     return Image.alpha_composite(base, txt_layer).convert("RGB")
 
