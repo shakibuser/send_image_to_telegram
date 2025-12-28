@@ -30,9 +30,9 @@ def load_token(key_name, json_key):
 TELEGRAM_BOT_TOKEN = load_token("TELEGRAM_BOT_TOKEN", "telegram_bot_token")
 TELEGRAM_CHANNEL_ID = load_token("TELEGRAM_CHANNEL_ID", "telegram_channel_id")
 
-# --- 2. WATERMARK TEXT ---
-# متن فارسی ساده (پایتون ۳ این را به درستی پردازش می‌کند اگر فونت مناسب باشد)
-FIXED_WATERMARK_TEXT = "صبا رسانه saba_rasanehh@"
+# --- 2. TEXT SETTINGS ---
+TEXT_PERSIAN = "صبا رسانه"
+TEXT_ENGLISH = "@saba_rasanehh"
 
 # --- 3. DYNAMIC PROMPTS ---
 SUBJECTS = [
@@ -111,43 +111,61 @@ def generate_image(prompt):
 
 
 def get_telegram_icon(size):
+    """
+    Downloads Telegram icon. If fails, DRAWS a correct vector-like paper plane.
+    """
     url = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/480px-Telegram_logo.svg.png"
+    headers = {"User-Agent": "Mozilla/5.0"}
+
     try:
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code == 200:
             icon = Image.open(io.BytesIO(resp.content)).convert("RGBA")
             resample = getattr(Image, "Resampling", Image).LANCZOS
             return icon.resize((size, size), resample)
     except:
         pass
+
+    # Fallback: Draw the actual Telegram Logo (Blue Circle + Paper Plane)
     icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(icon)
+
+    # 1. Blue Circle
     d.ellipse((0, 0, size, size), fill="#24A1DE")
+
+    # 2. White Paper Plane (Coordinates relative to size)
+    # Nose: (78% x, 25% y)
+    # Left Wing Tip: (18% x, 50% y)
+    # Bottom V: (55% x, 75% y)
+    # Right Wing Tail: (82% x, 22% y) - approximated logic for simple polygon
+
+    # Using a 3-point triangle approximation which looks very close at small sizes
+    points = [
+        (size * 0.18, size * 0.48),  # Left wing
+        (size * 0.82, size * 0.22),  # Nose/Top-Right
+        (size * 0.55, size * 0.72)   # Bottom
+    ]
+    d.polygon(points, fill="white")
+
     return icon
 
 
 def get_font(size):
-    """Downloads Vazirmatn font to CURRENT directory."""
-    # Use current directory to ensure persistence during script run
-    font_filename = "Vazirmatn-Regular.ttf"
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    font_path = os.path.join(script_dir, font_filename)
+    font_path = os.path.join(script_dir, "Vazir.ttf")
 
-    # 1. Try Windows System Fonts (Local Test)
     if os.name == 'nt':
         try:
             return ImageFont.truetype("tahoma.ttf", size)
         except:
             pass
 
-    # 2. Check if Vazir exists locally
     if os.path.exists(font_path):
         try:
             return ImageFont.truetype(font_path, size)
         except:
             pass
 
-    # 3. Download from GitHub Raw (Vazirmatn)
     print("⬇️ Downloading Vazir font...")
     url = "https://raw.githubusercontent.com/rastikerdar/vazirmatn/master/fonts/ttf/Vazirmatn-Regular.ttf"
     try:
@@ -155,15 +173,10 @@ def get_font(size):
         if resp.status_code == 200:
             with open(font_path, "wb") as f:
                 f.write(resp.content)
-            print("✅ Font downloaded successfully.")
             return ImageFont.truetype(font_path, size)
-        else:
-            print(f"⚠️ Font download error: {resp.status_code}")
     except Exception as e:
-        print(f"⚠️ Font download failed: {e}")
+        print(f"⚠️ Font error: {e}")
 
-    # 4. Fallback (This WILL cause garbage text for Persian, but it's last resort)
-    print("❌ CRITICAL: Could not load any Persian font. Using default.")
     return ImageFont.load_default()
 
 
@@ -172,15 +185,23 @@ def add_watermark(image):
     txt_layer = Image.new("RGBA", base.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(txt_layer)
 
-    # Text Processing (Persian)
-    reshaped = arabic_reshaper.reshape(FIXED_WATERMARK_TEXT)
-    bidi_text = get_display(reshaped)
-
+    # Font Setup
     font_size = int(image.width / 50)
     font = get_font(font_size)
 
+    # Prepare Text: Split English and Persian
+    # Process Persian separately to ensure correct reshaping
+    reshaped_fa = arabic_reshaper.reshape(TEXT_PERSIAN)
+    bidi_fa = get_display(reshaped_fa)
+
+    # Construct Final Visual String: [English] [Separator] [Persian]
+    # Since we are drawing Left-to-Right, we put the English first, then the Persian
+    # But Persian reads Right-to-Left.
+    # Example Visual: "@saba_rasanehh | hnasaR abaS" (Visual LTR)
+    final_text_visual = f"{TEXT_ENGLISH} | {bidi_fa}"
+
     # Measurements
-    bbox = draw.textbbox((0, 0), bidi_text, font=font)
+    bbox = draw.textbbox((0, 0), final_text_visual, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
     icon_size = int(h * 1.6)
@@ -201,17 +222,23 @@ def add_watermark(image):
     cap_x1, cap_y1 = start_x - pad_x, center_y - (content_h//2) - pad_y
     cap_x2, cap_y2 = end_x + pad_x, center_y + (content_h//2) + pad_y
 
+    # Draw Capsule
     if hasattr(draw, "rounded_rectangle"):
         draw.rounded_rectangle(
             [cap_x1, cap_y1, cap_x2, cap_y2], radius=15, fill=(0, 0, 0, 140))
     else:
         draw.rectangle([cap_x1, cap_y1, cap_x2, cap_y2], fill=(0, 0, 0, 140))
 
+    # Draw Icon
     if icon:
         txt_layer.paste(icon, (start_x, center_y - icon_size//2), icon)
 
-    draw.text((start_x + icon_size + gap, center_y - h//2 - 4),
-              bidi_text, font=font, fill=(255, 255, 255, 255))
+    # Draw Text (Combined Visual String)
+    text_pos_x = start_x + icon_size + gap
+    text_pos_y = center_y - h//2 - 4
+
+    draw.text((text_pos_x, text_pos_y), final_text_visual,
+              font=font, fill=(255, 255, 255, 255))
 
     return Image.alpha_composite(base, txt_layer).convert("RGB")
 
