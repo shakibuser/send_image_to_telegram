@@ -30,10 +30,9 @@ def load_token(key_name, json_key):
 TELEGRAM_BOT_TOKEN = load_token("TELEGRAM_BOT_TOKEN", "telegram_bot_token")
 TELEGRAM_CHANNEL_ID = load_token("TELEGRAM_CHANNEL_ID", "telegram_channel_id")
 
-# --- 2. WATERMARK TEXT (UNICODE SAFE) ---
-# استفاده از یونیکد برای جلوگیری از بهم ریختگی متن در سرورهای لینوکس
-# \u0635\u0628\u0627 \u0631\u0633\u0627\u0646\u0647 = صبا رسانه
-FIXED_WATERMARK_TEXT = "\u0635\u0628\u0627 \u0631\u0633\u0627\u0646\u0647 saba_rasanehh@"
+# --- 2. WATERMARK TEXT ---
+# متن فارسی ساده (پایتون ۳ این را به درستی پردازش می‌کند اگر فونت مناسب باشد)
+FIXED_WATERMARK_TEXT = "صبا رسانه saba_rasanehh@"
 
 # --- 3. DYNAMIC PROMPTS ---
 SUBJECTS = [
@@ -128,37 +127,43 @@ def get_telegram_icon(size):
 
 
 def get_font(size):
-    """Downloads Vazirmatn font to TEMP directory (More reliable on GitHub Actions)"""
-    # Use temp directory to avoid permission issues
-    font_path = os.path.join(tempfile.gettempdir(), "Vazir.ttf")
+    """Downloads Vazirmatn font to CURRENT directory."""
+    # Use current directory to ensure persistence during script run
+    font_filename = "Vazirmatn-Regular.ttf"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    font_path = os.path.join(script_dir, font_filename)
 
-    # 1. Try Local/System
-    try:
-        return ImageFont.truetype("tahoma.ttf", size)
-    except:
-        pass
+    # 1. Try Windows System Fonts (Local Test)
+    if os.name == 'nt':
+        try:
+            return ImageFont.truetype("tahoma.ttf", size)
+        except:
+            pass
 
-    # 2. Try Cached Download in Temp
+    # 2. Check if Vazir exists locally
     if os.path.exists(font_path):
         try:
             return ImageFont.truetype(font_path, size)
         except:
             pass
 
-    # 3. Download from Google Fonts
+    # 3. Download from GitHub Raw (Vazirmatn)
     print("⬇️ Downloading Vazir font...")
-    url = "https://github.com/google/fonts/raw/main/ofl/vazirmatn/Vazirmatn-Regular.ttf"
+    url = "https://raw.githubusercontent.com/rastikerdar/vazirmatn/master/fonts/ttf/Vazirmatn-Regular.ttf"
     try:
-        resp = requests.get(url, timeout=20)
+        resp = requests.get(url, timeout=30)
         if resp.status_code == 200:
             with open(font_path, "wb") as f:
                 f.write(resp.content)
+            print("✅ Font downloaded successfully.")
             return ImageFont.truetype(font_path, size)
+        else:
+            print(f"⚠️ Font download error: {resp.status_code}")
     except Exception as e:
         print(f"⚠️ Font download failed: {e}")
 
-    # 4. Fallback
-    print("❌ CRITICAL: Using default font (Persian may break).")
+    # 4. Fallback (This WILL cause garbage text for Persian, but it's last resort)
+    print("❌ CRITICAL: Could not load any Persian font. Using default.")
     return ImageFont.load_default()
 
 
