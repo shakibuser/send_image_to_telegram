@@ -10,99 +10,68 @@ from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# --- Load Configuration ---
+# --- 1. CONFIGURATION ---
+# توکن‌ها را از متغیرهای محیطی یا فایل می‌خوانیم
 
 
-def load_config():
-    """
-    Loads configuration. 
-    Priority 1: Environment Variables (For GitHub Actions/Cloud)
-    Priority 2: config.json (For Local Run)
-    """
-    config = {}
+def load_token(key_name, json_key):
+    # اولویت با متغیر محیطی (گیت‌هاب)
+    val = os.environ.get(key_name)
+    if val:
+        return val
 
-    # 1. Try Environment Variables first
-    if os.environ.get("TELEGRAM_BOT_TOKEN"):
-        config["telegram_bot_token"] = os.environ.get("TELEGRAM_BOT_TOKEN")
-        config["telegram_channel_id"] = os.environ.get("TELEGRAM_CHANNEL_ID")
-        config["watermark_text"] = os.environ.get(
-            "WATERMARK_TEXT", "صبا رسانه saba_rasanehh@")  # Default fixed
-        return config
-
-    # 2. Try config.json
+    # اگر نبود، خواندن از فایل کانفیگ (ویندوز)
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(script_dir, 'config.json')
-
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(
-            "⚠️ Warning: No config found. Assuming Env Vars will be used later or failing.")
-        return {}  # Return empty to let it fail later if critical envs are missing
-    except json.JSONDecodeError:
-        print("❌ Error: Invalid JSON in 'config.json'.")
-        sys.exit(1)
+        with open(os.path.join(script_dir, 'config.json'), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data.get(json_key)
+    except:
+        return None
 
 
-CONFIG = load_config()
+TELEGRAM_BOT_TOKEN = load_token("TELEGRAM_BOT_TOKEN", "telegram_bot_token")
+TELEGRAM_CHANNEL_ID = load_token("TELEGRAM_CHANNEL_ID", "telegram_channel_id")
 
-# --- Constants from Config ---
-TELEGRAM_BOT_TOKEN = CONFIG.get("telegram_bot_token")
-TELEGRAM_CHANNEL_ID = CONFIG.get("telegram_channel_id")
-# Default watermark text if not set
-WATERMARK_TEXT = CONFIG.get("watermark_text", "صبا رسانه saba_rasanehh@")
+# --- 2. HARDCODED WATERMARK (راه حل قطعی) ---
+# متن را مستقیماً اینجا می‌نویسیم تا دیگر مشکل Secret پیش نیاید
+FIXED_WATERMARK_TEXT = "صبا رسانه saba_rasanehh@"
 
-# --- Dynamic Prompt Components ---
+# --- 3. DYNAMIC PROMPTS ---
 SUBJECTS = [
-    # --- Iran ---
-    {"p": "The majestic ruins of Persepolis (Takht-e Jamshid) at sunset, ancient Persian architecture, stone columns, dramatic lighting",
+    {"p": "The majestic ruins of Persepolis (Takht-e Jamshid) at sunset, ancient Persian architecture",
      "fa": "تخت جمشید", "en": "Persepolis, Iran"},
-    {"p": "The Ziggurat of Chogha Zanbil, ancient Elamite complex, brick texture, golden hour sunlight, historical atmosphere",
+    {"p": "The Ziggurat of Chogha Zanbil, ancient Elamite complex, brick texture, golden hour sunlight",
         "fa": "زیگورات چغازنبیل", "en": "Chogha Zanbil, Iran"},
     {"p": "The ancient Arg-e Bam citadel, massive adobe fortress, desert sunset, intricate mudbrick details",
         "fa": "ارگ بم", "en": "Arg-e Bam, Iran"},
-    {"p": "Naqsh-e Jahan Square in Isfahan, turquoise domes of Imam Mosque, Ali Qapu Palace, reflection in the central pool",
+    {"p": "Naqsh-e Jahan Square in Isfahan, turquoise domes of Imam Mosque, Ali Qapu Palace reflection",
         "fa": "میدان نقش جهان", "en": "Naqsh-e Jahan Sq, Isfahan"},
-    {"p": "Si-o-se-pol bridge in Isfahan at night, illuminated arches reflecting in the Zayandeh Rood river, romantic atmosphere",
-        "fa": "سی‌وسه‌پل", "en": "Si-o-se-pol, Isfahan"},
-    {"p": "Mount Damavand covered in snow, volcanic peak rising above clouds, wild poppies in foreground, majestic view",
+    {"p": "Mount Damavand covered in snow, volcanic peak rising above clouds, wild poppies in foreground",
         "fa": "کوه دماوند", "en": "Mount Damavand, Iran"},
-    {"p": "Nasir al-Mulk Mosque (Pink Mosque) in Shiraz, morning light through stained glass, colorful patterns on carpet",
+    {"p": "Nasir al-Mulk Mosque (Pink Mosque) in Shiraz, morning light through stained glass, colorful patterns",
      "fa": "مسجد نصیرالملک", "en": "Pink Mosque, Shiraz"},
-    {"p": "The Kaluts of Shahdad Desert (Lut Desert) at sunrise, strange sand formations, vast landscape, national geographic style",
+    {"p": "The Kaluts of Shahdad Desert (Lut Desert) at sunrise, strange sand formations, vast landscape",
      "fa": "کلوت‌های شهداد", "en": "Lut Desert, Iran"},
-    {"p": "Tabatabaei Historical House in Kashan, traditional Persian architecture, stained glass, courtyard with pool",
+    {"p": "Tabatabaei Historical House in Kashan, traditional Persian architecture, stained glass, courtyard",
         "fa": "خانه طباطبایی‌ها", "en": "Tabatabaei House, Kashan"},
-
-    # --- Asia ---
-    {"p": "Angkor Wat temple complex in Cambodia at sunrise, reflection in lotus pond, ancient stone carvings, mystical mist",
+    {"p": "Angkor Wat temple complex in Cambodia at sunrise, reflection in lotus pond, mystical mist",
         "fa": "انگکور وات", "en": "Angkor Wat, Cambodia"},
-    {"p": "Limestone karsts of Ha Long Bay in Vietnam, emerald waters, traditional junk boat sailing, misty mountains",
+    {"p": "Ha Long Bay in Vietnam, limestone karsts, emerald waters, traditional junk boat sailing",
         "fa": "خلیج ها لونگ", "en": "Ha Long Bay, Vietnam"},
-    {"p": "Fushimi Inari Taisha shrine in Kyoto Japan, path of thousands of red torii gates, forest background",
+    {"p": "Fushimi Inari Taisha shrine in Kyoto, path of thousands of red torii gates, forest background",
         "fa": "معبد فوشیمی ایناری", "en": "Fushimi Inari, Japan"},
-    {"p": "The Great Wall of China winding through autumn mountains, sunrise, ancient fortification, majestic view",
+    {"p": "The Great Wall of China winding through autumn mountains, sunrise, ancient fortification",
         "fa": "دیوار بزرگ چین", "en": "Great Wall of China"},
-    {"p": "Gardens by the Bay in Singapore, Supertree Grove at night, neon lights, futuristic garden, lush greenery",
+    {"p": "Gardens by the Bay in Singapore, Supertree Grove at night, neon lights, futuristic garden",
         "fa": "باغ‌های خلیج", "en": "Gardens by the Bay, Singapore"},
-    {"p": "The ancient temples of Bagan in Myanmar, hot air balloons floating at sunrise, golden pagodas, dreamy atmosphere",
-        "fa": "معابد باگان", "en": "Bagan, Myanmar"},
-    {"p": "The Forbidden City in Beijing, snow covering golden roofs, intricate red palace details, imperial history",
-        "fa": "شهر ممنوعه", "en": "Forbidden City, China"},
-    {"p": "Mount Fuji with cherry blossoms (Sakura) in the foreground, lake reflection, snow-capped peak, serene",
+    {"p": "Mount Fuji with cherry blossoms (Sakura) in the foreground, lake reflection, snow-capped peak",
      "fa": "کوه فوجی", "en": "Mount Fuji, Japan"},
-    {"p": "The Taj Mahal in India, white marble mausoleum, symmetrical reflection, soft morning mist, iconic landmark",
+    {"p": "The Taj Mahal in India, white marble mausoleum, symmetrical reflection, soft morning mist",
         "fa": "تاج محل", "en": "Taj Mahal, India"},
-    {"p": "Petra in Jordan, The Treasury (Al-Khazneh) carved into red sandstone cliff, dramatic shadows, desert canyon",
+    {"p": "Petra in Jordan, The Treasury (Al-Khazneh) carved into red sandstone cliff, dramatic shadows",
      "fa": "پترا", "en": "Petra, Jordan"},
-    {"p": "Arashiyama Bamboo Grove in Kyoto, towering green bamboo stalks, sunlight filtering through, path leading forward",
-        "fa": "جنگل بامبو آراشیاما", "en": "Bamboo Grove, Japan"},
-
-    # --- General Beautiful Locations ---
-    {"p": "A cozy rainy street in Paris at night, reflection on wet cobblestones, glowing cafe lights",
-        "fa": "خیابان بارانی در پاریس", "en": "Paris, France"},
-    {"p": "Santorini, Greece, white buildings with blue domes, vibrant pink bougainvillea flowers, Aegean Sea view",
+    {"p": "Santorini, Greece, white buildings with blue domes, vibrant pink bougainvillea flowers, Aegean Sea",
         "fa": "سانتورینی", "en": "Santorini, Greece"},
     {"p": "Venice canals at sunset, gondola, old architecture, reflection in water, romantic atmosphere",
         "fa": "ونیز", "en": "Venice, Italy"},
@@ -112,258 +81,169 @@ SUBJECTS = [
         "fa": "کتابخانه جادویی", "en": "Magical Library"}
 ]
 
-STYLES = [
-    "cinematic lighting, photorealistic, 8k",
-    "digital art, vibrant colors, sharp focus",
-    "oil painting style, textured brushstrokes, artistic",
-    "watercolor painting, soft edges, dreamy",
-    "cyberpunk style, neon lights, high contrast",
-    "studio photography, professional lighting, crisp details",
-    "anime style, makoto shinkai aesthetic, highly detailed",
-    "vintage polaroid style, nostalgic, film grain",
-    "concept art, fantasy style, epic composition",
-    "national geographic style, nature photography"
-]
-
-ATMOSPHERES = [
-    "during a golden sunset",
-    "under a dramatic stormy sky",
-    "in the early morning mist",
-    "at night with a bright full moon",
-    "during a heavy rain shower",
-    "bathed in soft warm sunlight",
-    "in a snowy winter blizzard",
-    "during the blue hour",
-    "with dramatic shadows and light beams",
-    "under the northern lights"
-]
+STYLES = ["cinematic lighting, 8k", "digital art, vibrant colors", "oil painting style",
+          "watercolor painting, soft edges", "cyberpunk style, neon lights", "national geographic style"]
+ATMOSPHERES = ["during a golden sunset", "under a dramatic stormy sky",
+               "in the early morning mist", "at night with a bright full moon", "bathed in soft warm sunlight"]
 
 
 def get_dynamic_prompt():
-    """Builds a random prompt from components."""
     subj = random.choice(SUBJECTS)
     style = random.choice(STYLES)
-    atmosphere = random.choice(ATMOSPHERES)
-    full_prompt = f"{subj['p']}, {atmosphere}, {style}, masterpiece, trending on artstation."
-    return {
-        "text": full_prompt,
-        "loc_fa": subj['fa'],
-        "loc_en": subj['en']
-    }
+    atm = random.choice(ATMOSPHERES)
+    return {"text": f"{subj['p']}, {atm}, {style}, masterpiece.", "fa": subj['fa'], "en": subj['en']}
+
+# --- 4. GENERATION ---
 
 
 def generate_image(prompt):
-    """
-    Generates an image using Pollinations.ai with retry mechanism.
-    """
-    encoded_prompt = urllib.parse.quote(prompt)
+    encoded = urllib.parse.quote(prompt)
     seed = random.randint(0, 1000000)
-    api_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&seed={seed}&nologo=true&model=flux"
+    # Using 'flux' model for high quality
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1280&height=720&seed={seed}&nologo=true&model=flux"
+    print(f"🎨 Generating: {prompt[:40]}...")
 
-    print(f"🎨 Generating image via Pollinations: {prompt[:40]}...")
-
-    # Retry mechanism: Try 3 times before failing
-    max_retries = 3
-    for attempt in range(max_retries):
+    for i in range(3):  # 3 Retries
         try:
-            if attempt > 0:
-                print(f"   🔄 Retry attempt {attempt + 1}/{max_retries}...")
-
-            response = requests.get(api_url, timeout=60)
-
-            if response.status_code == 200:
-                print("✅ Image generated successfully!")
-                return Image.open(io.BytesIO(response.content))
-            else:
-                print(f"   ⚠️ Server error: {response.status_code}")
-
+            resp = requests.get(url, timeout=60)
+            if resp.status_code == 200:
+                return Image.open(io.BytesIO(resp.content))
         except Exception as e:
-            print(f"   ⚠️ Connection error: {e}")
-
-        # Wait 5 seconds before next retry if not successful
-        if attempt < max_retries - 1:
-            time.sleep(5)
-
-    print("❌ Failed to generate image after retries.")
+            print(f"⚠️ Attempt {i+1} failed: {e}")
+            time.sleep(3)
     return None
 
 
 def get_telegram_icon(size):
     url = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/480px-Telegram_logo.svg.png"
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            icon = Image.open(io.BytesIO(response.content)).convert("RGBA")
-            if hasattr(Image, "Resampling"):
-                resample = Image.Resampling.LANCZOS
-            else:
-                resample = Image.LANCZOS
-            icon = icon.resize((size, size), resample)
-            return icon
-    except Exception as e:
-        print(f"⚠️ Could not download icon, using fallback: {e}")
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            icon = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+            # Safe resize
+            resample = getattr(Image, "Resampling", Image).LANCZOS
+            return icon.resize((size, size), resample)
+    except:
+        pass
 
+    # Fallback Icon
     icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(icon)
-    draw.ellipse((0, 0, size, size), fill="#24A1DE")
-    draw.polygon([(size*0.2, size*0.5), (size*0.8, size*0.2),
-                 (size*0.5, size*0.8)], fill="white")
+    d = ImageDraw.Draw(icon)
+    d.ellipse((0, 0, size, size), fill="#24A1DE")
     return icon
 
 
 def get_font(size):
-    """
-    Robust font loader for Windows (Local) and Linux (GitHub Actions).
-    Downloads Vazirmatn if system fonts are missing.
-    """
-    # Define absolute path for font file to avoid path issues
+    """Downloads Vazirmatn font from Google Fonts (Most Reliable Source)"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    font_filename = "Vazirmatn-Regular.ttf"
-    font_path = os.path.join(script_dir, font_filename)
+    font_path = os.path.join(script_dir, "Vazir.ttf")
 
-    # 1. Try Windows fonts first (Local testing)
+    # 1. Try Local/System
     try:
         return ImageFont.truetype("tahoma.ttf", size)
     except:
         pass
 
-    try:
-        return ImageFont.truetype("arial.ttf", size)
-    except:
-        pass
-
-    # 2. Check if font already exists locally
+    # 2. Try Cached Download
     if os.path.exists(font_path):
         try:
             return ImageFont.truetype(font_path, size)
         except:
-            print("⚠️ Existing font file corrupted, re-downloading...")
+            pass
 
-    # 3. Download Font (GitHub Actions / Linux)
-    print("⬇️ Downloading Persian font (Vazirmatn)...")
+    # 3. Download from Google Fonts (Raw)
+    print("⬇️ Downloading Vazir font...")
+    url = "https://github.com/google/fonts/raw/main/ofl/vazirmatn/Vazirmatn-Regular.ttf"
+    try:
+        resp = requests.get(url, timeout=20)
+        if resp.status_code == 200:
+            with open(font_path, "wb") as f:
+                f.write(resp.content)
+            return ImageFont.truetype(font_path, size)
+    except Exception as e:
+        print(f"⚠️ Font download failed: {e}")
 
-    # List of reliable URLs for Vazirmatn font
-    urls = [
-        "https://github.com/google/fonts/raw/main/ofl/vazirmatn/Vazirmatn-Regular.ttf",
-        "https://raw.githubusercontent.com/rastikerdar/vazirmatn/master/fonts/ttf/Vazirmatn-Regular.ttf"
-    ]
-
-    for url in urls:
-        try:
-            print(f"   Trying: {url}...")
-            response = requests.get(url, timeout=20)
-            if response.status_code == 200:
-                with open(font_path, "wb") as f:
-                    f.write(response.content)
-                print("✅ Font downloaded successfully.")
-                return ImageFont.truetype(font_path, size)
-        except Exception as e:
-            print(f"   ⚠️ Font download failed from {url}: {e}")
-
-    # 4. Absolute Fallback (Will show squares for Persian)
-    print("❌ CRITICAL: Could not load any Persian font. Using default.")
+    # 4. Fallback
     return ImageFont.load_default()
 
 
 def add_watermark(image):
-    """
-    Adds a professional watermark with a semi-transparent 'Capsule' background.
-    """
-    base_image = image.convert("RGBA")
-    txt_layer = Image.new("RGBA", base_image.size, (255, 255, 255, 0))
+    base = image.convert("RGBA")
+    txt_layer = Image.new("RGBA", base.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(txt_layer)
 
-    # Process Text
-    reshaped_text = arabic_reshaper.reshape(WATERMARK_TEXT)
-    bidi_text = get_display(reshaped_text)
+    # Text Processing (Persian)
+    reshaped = arabic_reshaper.reshape(FIXED_WATERMARK_TEXT)
+    bidi_text = get_display(reshaped)
 
-    # Get Font (Auto-download if needed)
     font_size = int(image.width / 50)
     font = get_font(font_size)
 
-    # Calculate Dimensions
+    # Measurements
     bbox = draw.textbbox((0, 0), bidi_text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-    icon_size = int(text_h * 1.6)
+    icon_size = int(h * 1.6)
     icon = get_telegram_icon(icon_size)
 
-    # Layout Config
-    margin_right = 30
-    margin_bottom = 30
+    margin = 30
     gap = 12
-    padding_x = 15
-    padding_y = 10
+    pad_x, pad_y = 15, 10
 
-    # Positions
-    content_width = icon_size + gap + text_w
-    content_height = max(icon_size, text_h)
+    # Positions (Bottom Right)
+    content_w = icon_size + gap + w
+    content_h = max(icon_size, h)
 
-    content_end_x = base_image.width - margin_right
-    content_start_x = content_end_x - content_width
+    end_x = base.width - margin
+    start_x = end_x - content_w
+    center_y = base.height - margin - (content_h // 2)
 
-    icon_x = content_start_x
-    text_x = icon_x + icon_size + gap
+    # --- CAPSULE BACKGROUND ---
+    cap_x1, cap_y1 = start_x - pad_x, center_y - (content_h//2) - pad_y
+    cap_x2, cap_y2 = end_x + pad_x, center_y + (content_h//2) + pad_y
 
-    center_y = base_image.height - margin_bottom - (content_height // 2)
-    icon_y = center_y - (icon_size // 2)
-    text_y = center_y - (text_h // 2) - 4
-
-    # Capsule Background
-    capsule_x1 = content_start_x - padding_x
-    capsule_y1 = center_y - (content_height // 2) - padding_y
-    capsule_x2 = content_end_x + padding_x
-    capsule_y2 = center_y + (content_height // 2) + padding_y
-
-    capsule_color = (0, 0, 0, 140)
-
+    # Draw Capsule (Black 55% Opacity)
     if hasattr(draw, "rounded_rectangle"):
         draw.rounded_rectangle(
-            [capsule_x1, capsule_y1, capsule_x2, capsule_y2], radius=15, fill=capsule_color)
+            [cap_x1, cap_y1, cap_x2, cap_y2], radius=15, fill=(0, 0, 0, 140))
     else:
-        draw.rectangle([capsule_x1, capsule_y1, capsule_x2,
-                       capsule_y2], fill=capsule_color)
+        draw.rectangle([cap_x1, cap_y1, cap_x2, cap_y2], fill=(0, 0, 0, 140))
 
-    # Paste Elements
+    # Draw Content
     if icon:
-        txt_layer.paste(icon, (icon_x, icon_y), icon)
+        txt_layer.paste(icon, (start_x, center_y - icon_size//2), icon)
 
-    text_color = (255, 255, 255, 255)
-    draw.text((text_x, text_y), bidi_text, font=font, fill=text_color)
+    draw.text((start_x + icon_size + gap, center_y - h//2 - 4),
+              bidi_text, font=font, fill=(255, 255, 255, 255))
 
-    return Image.alpha_composite(base_image, txt_layer).convert("RGB")
+    return Image.alpha_composite(base, txt_layer).convert("RGB")
 
 
 def send_to_telegram(image, loc_fa, loc_en):
+    if not TELEGRAM_BOT_TOKEN:
+        print("❌ Error: Bot token missing.")
+        return
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    img_byte_arr = io.BytesIO()
-    image.save(img_byte_arr, format='JPEG', quality=95)
-    img_byte_arr.seek(0)
-    files = {'photo': ('image.jpg', img_byte_arr)}
-    # Add LRM (\u200E) to fix Persian/English mix in caption
-    caption_text = f"( صبا رسانه  ||  \u200E@saba_rasanehh )\n\n📍 {loc_fa}\n📍 {loc_en}"
-    data = {'chat_id': TELEGRAM_CHANNEL_ID, 'caption': caption_text}
+    byte_io = io.BytesIO()
+    image.save(byte_io, 'JPEG', quality=95)
+    byte_io.seek(0)
+
+    caption = f"( صبا رسانه  ||  \u200E@saba_rasanehh )\n\n📍 {loc_fa}\n📍 {loc_en}"
 
     print("🚀 Sending to Telegram...")
     try:
-        response = requests.post(url, files=files, data=data, timeout=30)
-        if response.status_code == 200:
-            print("✅ Image sent successfully!")
-        else:
-            print(f"❌ Error sending to Telegram: {response.text}")
+        resp = requests.post(url, files={'photo': byte_io}, data={
+                             'chat_id': TELEGRAM_CHANNEL_ID, 'caption': caption})
+        print("✅ Sent!" if resp.status_code ==
+              200 else f"❌ Telegram Error: {resp.text}")
     except Exception as e:
-        print(f"❌ Connection error: {e}")
+        print(f"❌ Connection Error: {e}")
 
 
 if __name__ == "__main__":
-    if not TELEGRAM_BOT_TOKEN:
-        print("⚠️ Warning: Configuration incomplete. Check Env Vars or config.json")
-
-    prompt_data = get_dynamic_prompt()
-    generated_img = generate_image(prompt_data["text"])
-
-    if generated_img:
-        final_img = add_watermark(generated_img)
-        send_to_telegram(
-            final_img, prompt_data["loc_fa"], prompt_data["loc_en"])
+    p_data = get_dynamic_prompt()
+    img = generate_image(p_data["text"])
+    if img:
+        img = add_watermark(img)
+        send_to_telegram(img, p_data["fa"], p_data["en"])
