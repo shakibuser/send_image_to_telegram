@@ -6,21 +6,18 @@ import os
 import sys
 import time
 import urllib.parse
+import tempfile
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
 
 # --- 1. CONFIGURATION ---
-# توکن‌ها را از متغیرهای محیطی یا فایل می‌خوانیم
 
 
 def load_token(key_name, json_key):
-    # اولویت با متغیر محیطی (گیت‌هاب)
     val = os.environ.get(key_name)
     if val:
         return val
-
-    # اگر نبود، خواندن از فایل کانفیگ (ویندوز)
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(script_dir, 'config.json'), 'r', encoding='utf-8') as f:
@@ -33,9 +30,10 @@ def load_token(key_name, json_key):
 TELEGRAM_BOT_TOKEN = load_token("TELEGRAM_BOT_TOKEN", "telegram_bot_token")
 TELEGRAM_CHANNEL_ID = load_token("TELEGRAM_CHANNEL_ID", "telegram_channel_id")
 
-# --- 2. HARDCODED WATERMARK (راه حل قطعی) ---
-# متن را مستقیماً اینجا می‌نویسیم تا دیگر مشکل Secret پیش نیاید
-FIXED_WATERMARK_TEXT = "صبا رسانه saba_rasanehh@"
+# --- 2. WATERMARK TEXT (UNICODE SAFE) ---
+# استفاده از یونیکد برای جلوگیری از بهم ریختگی متن در سرورهای لینوکس
+# \u0635\u0628\u0627 \u0631\u0633\u0627\u0646\u0647 = صبا رسانه
+FIXED_WATERMARK_TEXT = "\u0635\u0628\u0627 \u0631\u0633\u0627\u0646\u0647 saba_rasanehh@"
 
 # --- 3. DYNAMIC PROMPTS ---
 SUBJECTS = [
@@ -99,11 +97,10 @@ def get_dynamic_prompt():
 def generate_image(prompt):
     encoded = urllib.parse.quote(prompt)
     seed = random.randint(0, 1000000)
-    # Using 'flux' model for high quality
     url = f"https://image.pollinations.ai/prompt/{encoded}?width=1280&height=720&seed={seed}&nologo=true&model=flux"
     print(f"🎨 Generating: {prompt[:40]}...")
 
-    for i in range(3):  # 3 Retries
+    for i in range(3):
         try:
             resp = requests.get(url, timeout=60)
             if resp.status_code == 200:
@@ -120,13 +117,10 @@ def get_telegram_icon(size):
         resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
             icon = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-            # Safe resize
             resample = getattr(Image, "Resampling", Image).LANCZOS
             return icon.resize((size, size), resample)
     except:
         pass
-
-    # Fallback Icon
     icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(icon)
     d.ellipse((0, 0, size, size), fill="#24A1DE")
@@ -134,9 +128,9 @@ def get_telegram_icon(size):
 
 
 def get_font(size):
-    """Downloads Vazirmatn font from Google Fonts (Most Reliable Source)"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    font_path = os.path.join(script_dir, "Vazir.ttf")
+    """Downloads Vazirmatn font to TEMP directory (More reliable on GitHub Actions)"""
+    # Use temp directory to avoid permission issues
+    font_path = os.path.join(tempfile.gettempdir(), "Vazir.ttf")
 
     # 1. Try Local/System
     try:
@@ -144,14 +138,14 @@ def get_font(size):
     except:
         pass
 
-    # 2. Try Cached Download
+    # 2. Try Cached Download in Temp
     if os.path.exists(font_path):
         try:
             return ImageFont.truetype(font_path, size)
         except:
             pass
 
-    # 3. Download from Google Fonts (Raw)
+    # 3. Download from Google Fonts
     print("⬇️ Downloading Vazir font...")
     url = "https://github.com/google/fonts/raw/main/ofl/vazirmatn/Vazirmatn-Regular.ttf"
     try:
@@ -164,6 +158,7 @@ def get_font(size):
         print(f"⚠️ Font download failed: {e}")
 
     # 4. Fallback
+    print("❌ CRITICAL: Using default font (Persian may break).")
     return ImageFont.load_default()
 
 
@@ -190,7 +185,6 @@ def add_watermark(image):
     gap = 12
     pad_x, pad_y = 15, 10
 
-    # Positions (Bottom Right)
     content_w = icon_size + gap + w
     content_h = max(icon_size, h)
 
@@ -202,14 +196,12 @@ def add_watermark(image):
     cap_x1, cap_y1 = start_x - pad_x, center_y - (content_h//2) - pad_y
     cap_x2, cap_y2 = end_x + pad_x, center_y + (content_h//2) + pad_y
 
-    # Draw Capsule (Black 55% Opacity)
     if hasattr(draw, "rounded_rectangle"):
         draw.rounded_rectangle(
             [cap_x1, cap_y1, cap_x2, cap_y2], radius=15, fill=(0, 0, 0, 140))
     else:
         draw.rectangle([cap_x1, cap_y1, cap_x2, cap_y2], fill=(0, 0, 0, 140))
 
-    # Draw Content
     if icon:
         txt_layer.paste(icon, (start_x, center_y - icon_size//2), icon)
 
