@@ -1,0 +1,45 @@
+name: Final Bot Run
+
+on:
+  schedule:
+    # ساعت ۱۹:۰۰ تهران
+    - cron: '30 15 * * *'
+  workflow_dispatch:
+
+jobs:
+  debug-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: pip install requests pillow arabic-reshaper python-bidi
+
+      - name: Find and Execute Script
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          WATERMARK_TEXT: ${{ secrets.WATERMARK_TEXT }}
+        run: |
+          echo "🔎 Searching for python files..."
+          # پیدا کردن تمام فایل‌های پایتون در پروژه
+          FILES=$(find . -name "*.py")
+          
+          if [ -z "$FILES" ]; then
+            echo "❌ CRITICAL ERROR: No python file found in the repository!"
+            echo "📂 Files present in repo:"
+            ls -R
+            exit 1
+          fi
+          
+          # انتخاب اولین فایل پایتون پیدا شده
+          SCRIPT_TO_RUN=$(echo "$FILES" | head -n 1)
+          
+          echo "✅ Found script: $SCRIPT_TO_RUN"
+          echo "🚀 Executing now..."
+          python "$SCRIPT_TO_RUN"
