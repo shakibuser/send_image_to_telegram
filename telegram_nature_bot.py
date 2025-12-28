@@ -134,12 +134,6 @@ def get_telegram_icon(size):
     d.ellipse((0, 0, size, size), fill="#24A1DE")
 
     # 2. White Paper Plane (Coordinates relative to size)
-    # Nose: (78% x, 25% y)
-    # Left Wing Tip: (18% x, 50% y)
-    # Bottom V: (55% x, 75% y)
-    # Right Wing Tail: (82% x, 22% y) - approximated logic for simple polygon
-
-    # Using a 3-point triangle approximation which looks very close at small sizes
     points = [
         (size * 0.18, size * 0.48),  # Left wing
         (size * 0.82, size * 0.22),  # Nose/Top-Right
@@ -185,60 +179,80 @@ def add_watermark(image):
     txt_layer = Image.new("RGBA", base.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(txt_layer)
 
-    # Font Setup
-    font_size = int(image.width / 50)
+    # Font Setup (Slightly bigger for readability)
+    font_size = int(image.width / 45)
     font = get_font(font_size)
 
-    # Prepare Text: Split English and Persian
-    # Process Persian separately to ensure correct reshaping
+    # Prepare Text
     reshaped_fa = arabic_reshaper.reshape(TEXT_PERSIAN)
-    bidi_fa = get_display(reshaped_fa)
+    bidi_fa = get_display(reshaped_fa)  # Text 1 (Top)
+    text_en = TEXT_ENGLISH             # Text 2 (Bottom)
 
-    # Construct Final Visual String: [English] [Separator] [Persian]
-    # Since we are drawing Left-to-Right, we put the English first, then the Persian
-    # But Persian reads Right-to-Left.
-    # Example Visual: "@saba_rasanehh | hnasaR abaS" (Visual LTR)
-    final_text_visual = f"{TEXT_ENGLISH} | {bidi_fa}"
+    # Calculate Dimensions for BOTH lines
+    bbox_fa = draw.textbbox((0, 0), bidi_fa, font=font)
+    w_fa = bbox_fa[2] - bbox_fa[0]
+    h_fa = bbox_fa[3] - bbox_fa[1]
 
-    # Measurements
-    bbox = draw.textbbox((0, 0), final_text_visual, font=font)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    bbox_en = draw.textbbox((0, 0), text_en, font=font)
+    w_en = bbox_en[2] - bbox_en[0]
+    h_en = bbox_en[3] - bbox_en[1]
 
-    icon_size = int(h * 1.6)
+    # Layout Config
+    line_spacing = int(font_size * 0.4)  # Explicit gap between lines
+    total_text_w = max(w_fa, w_en)
+    total_text_h = h_fa + h_en + line_spacing
+
+    # Icon config (Matches full height of text block)
+    icon_size = int(total_text_h * 0.95)
     icon = get_telegram_icon(icon_size)
 
-    margin = 30
-    gap = 12
-    pad_x, pad_y = 15, 10
+    margin = 35
+    gap = 20
+    pad_x, pad_y = 20, 15
 
-    content_w = icon_size + gap + w
-    content_h = max(icon_size, h)
+    # Block Size
+    content_w = icon_size + gap + total_text_w
+    content_h = max(icon_size, total_text_h)
 
+    # Global Position (Bottom Right)
     end_x = base.width - margin
     start_x = end_x - content_w
     center_y = base.height - margin - (content_h // 2)
 
     # --- CAPSULE BACKGROUND ---
-    cap_x1, cap_y1 = start_x - pad_x, center_y - (content_h//2) - pad_y
-    cap_x2, cap_y2 = end_x + pad_x, center_y + (content_h//2) + pad_y
+    cap_x1 = start_x - pad_x
+    cap_y1 = center_y - (content_h//2) - pad_y
+    cap_x2 = end_x + pad_x
+    cap_y2 = center_y + (content_h//2) + pad_y
 
     # Draw Capsule
     if hasattr(draw, "rounded_rectangle"):
         draw.rounded_rectangle(
-            [cap_x1, cap_y1, cap_x2, cap_y2], radius=15, fill=(0, 0, 0, 140))
+            [cap_x1, cap_y1, cap_x2, cap_y2], radius=25, fill=(0, 0, 0, 140))
     else:
         draw.rectangle([cap_x1, cap_y1, cap_x2, cap_y2], fill=(0, 0, 0, 140))
 
-    # Draw Icon
+    # Draw Icon (Left side of capsule)
+    icon_y = center_y - (icon_size // 2)
     if icon:
-        txt_layer.paste(icon, (start_x, center_y - icon_size//2), icon)
+        txt_layer.paste(icon, (start_x, icon_y), icon)
 
-    # Draw Text (Combined Visual String)
-    text_pos_x = start_x + icon_size + gap
-    text_pos_y = center_y - h//2 - 4
+    # Draw Text Lines (Right side of icon)
+    text_block_x = start_x + icon_size + gap
 
-    draw.text((text_pos_x, text_pos_y), final_text_visual,
+    # Vertical position for first line (Top)
+    # Start from center, move up by half total text height
+    text_start_y = center_y - (total_text_h // 2)
+
+    # Draw Persian (Top Line)
+    # Note: textbbox top might have padding, usually we draw at y
+    draw.text((text_block_x, text_start_y), bidi_fa,
               font=font, fill=(255, 255, 255, 255))
+
+    # Draw English (Bottom Line)
+    # Y = start + height of first line + spacing
+    draw.text((text_block_x, text_start_y + h_fa + line_spacing),
+              text_en, font=font, fill=(255, 255, 255, 255))
 
     return Image.alpha_composite(base, txt_layer).convert("RGB")
 
