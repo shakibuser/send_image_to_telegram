@@ -213,42 +213,55 @@ def get_telegram_icon(size):
 
 def get_font(size):
     """
-    Tries to load system fonts (Windows), otherwise downloads a Persian font (GitHub Actions).
+    Robust font loader for Windows (Local) and Linux (GitHub Actions).
+    Downloads Vazirmatn if system fonts are missing.
     """
+    # Define absolute path for font file to avoid path issues
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     font_filename = "Vazirmatn-Regular.ttf"
+    font_path = os.path.join(script_dir, font_filename)
 
-    # 1. Try Windows fonts first
+    # 1. Try Windows fonts first (Local testing)
     try:
         return ImageFont.truetype("tahoma.ttf", size)
     except:
-        pass  # Not on Windows or font missing
+        pass
 
     try:
         return ImageFont.truetype("arial.ttf", size)
     except:
         pass
 
-    # 2. Try Local Downloaded Font
-    if os.path.exists(font_filename):
+    # 2. Check if font already exists locally
+    if os.path.exists(font_path):
         try:
-            return ImageFont.truetype(font_filename, size)
+            return ImageFont.truetype(font_path, size)
         except:
-            pass
+            print("⚠️ Existing font file corrupted, re-downloading...")
 
-    # 3. Download Font (Run on GitHub Actions / Linux)
+    # 3. Download Font (GitHub Actions / Linux)
     print("⬇️ Downloading Persian font (Vazirmatn)...")
-    url = "https://raw.githubusercontent.com/rastikerdar/vazirmatn/master/fonts/ttf/Vazirmatn-Regular.ttf"
-    try:
-        response = requests.get(url, timeout=20)
-        if response.status_code == 200:
-            with open(font_filename, "wb") as f:
-                f.write(response.content)
-            return ImageFont.truetype(font_filename, size)
-    except Exception as e:
-        print(f"⚠️ Font download failed: {e}")
 
-    # 4. Absolute Fallback (Will likely break Persian text)
-    print("⚠️ Using default PIL font (Persian text may be broken).")
+    # List of reliable URLs for Vazirmatn font
+    urls = [
+        "https://github.com/google/fonts/raw/main/ofl/vazirmatn/Vazirmatn-Regular.ttf",
+        "https://raw.githubusercontent.com/rastikerdar/vazirmatn/master/fonts/ttf/Vazirmatn-Regular.ttf"
+    ]
+
+    for url in urls:
+        try:
+            print(f"   Trying: {url}...")
+            response = requests.get(url, timeout=20)
+            if response.status_code == 200:
+                with open(font_path, "wb") as f:
+                    f.write(response.content)
+                print("✅ Font downloaded successfully.")
+                return ImageFont.truetype(font_path, size)
+        except Exception as e:
+            print(f"   ⚠️ Font download failed from {url}: {e}")
+
+    # 4. Absolute Fallback (Will show squares for Persian)
+    print("❌ CRITICAL: Could not load any Persian font. Using default.")
     return ImageFont.load_default()
 
 
